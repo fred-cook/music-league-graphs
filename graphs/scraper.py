@@ -52,6 +52,16 @@ def process_round(soup: BeautifulSoup,
     """
     Extract the submitters, their song and the votes they received
     for each player in the round.
+
+    Parameters
+    ----------
+    soup: BeautifulSoup
+        the soupified html for the give round
+    data: list[dict]
+        the current list of data extracted from the league.
+        the results from this round will be added to it.
+    names: set[str]
+        all current known names to have submitted a song
     """
 
     # Find all rows containing voters
@@ -84,6 +94,26 @@ def process_round(soup: BeautifulSoup,
     return data, names
 
 def process_votes(entry: BeautifulSoup, expected_total: int) -> dict[str, int]:
+    """
+    Extract the votes for this round to see who voted for who.
+
+    Check against an expected total, telling us if the person
+    didn't vote, and therefore only received downvotes if that
+    rule is on in music league.
+
+    Parameters
+    ----------
+    entry: BeautifulSoup
+        the current submitted entry to get the votes of
+    expected_total: int
+        the expected total amount of points the submision
+        received.
+
+    Returns
+    -------
+    votes: dict[str, int]
+        the number of votes each voter gave.
+    """
 
     votes: dict[str, int] = defaultdict(int)
     for row in entry.findNext(class_="card-footer").findAll(class_="row"):
