@@ -9,6 +9,7 @@ readme = "README.md"
 python = "^3.9"
 pandas = "^2.2.3"
 beautifulsoup4 = "^4.12.3"
+tomli = "^2.2.1"
 
 
 [build-system]
