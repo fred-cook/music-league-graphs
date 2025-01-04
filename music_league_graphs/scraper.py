@@ -25,8 +25,6 @@ def create_dataframe(path: Path) -> tuple[pd.DataFrame, list[str]]:
         row representing a players entry in that round. A list
         of names for everyone that finished the league
     """
-
-    df = pd.DataFrame()
     data: list[dict] = []
     names: set[str] = set()
 
