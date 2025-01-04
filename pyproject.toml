@@ -12,6 +12,7 @@ beautifulsoup4 = "^4.12.3"
 tomli = "^2.2.1"
 bs4 = "^0.0.2"
 requests = "^2.32.3"
+pyarrow = "^18.1.0"
 
 
 [tool.poetry.group.dev.dependencies]
