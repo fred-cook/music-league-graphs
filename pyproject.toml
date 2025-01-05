@@ -6,13 +6,14 @@ authors = ["Fred Cook"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 pandas = "^2.2.3"
 beautifulsoup4 = "^4.12.3"
 tomli = "^2.2.1"
 bs4 = "^0.0.2"
 requests = "^2.32.3"
 pyarrow = "^18.1.0"
+matplotlib = "^3.10.0"
 
 
 [tool.poetry.group.dev.dependencies]
