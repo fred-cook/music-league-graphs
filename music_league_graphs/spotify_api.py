@@ -1,7 +1,7 @@
 
 import tomli
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from datetime import datetime
 from itertools import zip_longest
 
@@ -19,11 +19,11 @@ with open(Path(mlg.__file__).parent.parent / "secret.toml", "rb") as f:
 class SpotifyAPI:
     MAX_ARTIST_COUNT = 50
     MAX_SONG_AUDIO_FEATURES = 100
+    MAX_TRACKS = 100
 
     def __init__(self, song_ids: pd.Series):
         self.header = self.get_headers()
-        tracks = self.get_track_data(song_ids)
-        self.df = self.process_tracks(tracks)
+        self.df = self.get_track_data(song_ids)
         self.artist_data = self.get_artist_data(self.df["artist_ids"])
         self.df = self.combine_artist_data(self.df, self.artist_data)
 
@@ -45,24 +45,26 @@ class SpotifyAPI:
         Get the track data for the list of song ids. Handle
         the return codes if the authorisation is incorrect.
         """
-        url = f'https://api.spotify.com/v1/tracks?ids={",".join(song_ids)}'
-        p = requests.get(url, headers=self.header)
-        try:
-            p.raise_for_status()
-        except requests.HTTPError as e:
-            codes = {
-                401: "Bad or expired access token. Re-authenticat user",
-                403: "Bad OAuth request. Check the values in secret.toml",
-                429: "Rate limit exceeded. Try again in a few hours",
-            }
-            print(codes.get(p.status_code, "Unexpected error code"))
-            raise RuntimeError from e
-        tracks = p.json()["tracks"]
-        if len(tracks) != len(song_ids):
-            raise RuntimeError(f"Expected {len(song_ids)} tracks, but received {len(tracks)}")
-        return tracks
+        chunks = self.chunk_series(song_ids, self.MAX_TRACKS)
+        data: list[dict[str, Any]] = []
 
-    def process_tracks(self, tracks: list[dict[str, Any]]) -> pd.DataFrame:
+        for chunk in chunks:
+            url = f"https://api.spotify.com/v1/tracks?ids={','.join(chunk)}"
+            p = requests.get(url, headers=self.header)
+            try:
+                p.raise_for_status()
+            except requests.HTTPError as e:
+                codes = {
+                    401: "Bad or expired access token. Re-authenticat user",
+                    403: "Bad OAuth request. Check the values in secret.toml",
+                    429: "Rate limit exceeded. Try again in a few hours",
+                }
+                print(codes.get(p.status_code, "Unexpected error code"))
+                raise RuntimeError("Couldn't access Spotify API") from e
+            data += self.process_tracks(p.json()["tracks"])
+        return pd.DataFrame(data)
+
+    def process_tracks(self, tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Extract the information from the track objects returned
         """
@@ -76,7 +78,7 @@ class SpotifyAPI:
             track_data["popularity"] = track["popularity"]
             track_data["song_name"] = track["name"]
             data.append(track_data)
-        return pd.DataFrame(data)
+        return data
         
     def get_album_info(self, album: dict[str, Any]) -> dict[str, Any]:
         """
@@ -107,7 +109,11 @@ class SpotifyAPI:
         list and take a set of it, to be split into chunks of 50 + the
         tail end
         """
-        artist_chunks = self.chunk_artists(artists)
+        # flatten and remove duplicates
+        artists: list[str] = list(
+            {artist_id for row in artists for artist_id in row}
+        )
+        artist_chunks = self.chunk_series(artists, self.MAX_ARTIST_COUNT)
 
         artist_data: dict[str, Any] = {}
         
@@ -118,16 +124,11 @@ class SpotifyAPI:
 
         return artist_data
 
-    def chunk_series(self, series: pd.Series, chunk_size: int) -> list[list[str]]:
+    def chunk_series(self, series: Sequence, chunk_size: int) -> list[list[str]]:
         """
         The spotify API for artists can only take a maximum of 50,
         so split it into chunks of 50 + whatever is left over
         """
-        # flatten
-        series: list[str] = list(
-            {artist_id for row in series for artist_id in row}
-        )
-
         split_indices = np.arange(
             chunk_size,
             chunk_size * int(np.ceil(len(series) / chunk_size)),
@@ -168,4 +169,34 @@ class SpotifyAPI:
         return pd.concat((df, pd.DataFrame(artist_df_data)), axis=1)
 
     def get_track_audio_features(self, track_ids: pd.Series) -> pd.DataFrame:
-        
+        """
+        Another API to get some Spotify ownbrand stats like danceability
+        and valence (?)
+
+        Deprecated November 2024
+        """
+        chunks = self.chunk_series(track_ids, self.MAX_SONG_AUDIO_FEATURES)
+
+        feature_keys = [
+            "acousticness", # A confidence measure from 0.0 to 1.0 of whether the track is acoustic
+            "danceability", # Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity.
+            "energy", # Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity. 
+            "instrumentalness", # Predicts whether a track contains no vocals. "Ooh" and "aah" sounds are treated as instrumental 
+            "key", # The key the track is in. Integers map to pitches using standard Pitch Class notation. E.g. 0 = C, 1 = C♯/D♭, 2 = D, and so on. If no key was detected, the value is -1.'
+            "liveness", # Detects the presence of an audience in the recording
+            "loudness", # The overall loudness of a track in decibels (dB). Loudness values are averaged across the entire track
+            "tempo", # The overall estimated tempo of a track in beats per minute (BPM).
+            "time_signature", # An estimated time signature. The time signature ranges from 3 to 7 indicating time signatures of "3/4", to "7/4".
+            "valence", #A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track
+        ]
+
+        data: list[dict[str, Any]] = []
+
+        for chunk in chunks:
+            url = f"https://api.spotify.com/v1/audio-features?ids={','.join(chunk)}"
+            p = requests.get(url, headers=self.header)
+            print(p.json())
+            for track in p.json()["audio_features"]:
+                data.append([track[key] for key in feature_keys])
+        return pd.DataFrame(data)
+
