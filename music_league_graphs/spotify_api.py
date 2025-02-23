@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Sequence
 from datetime import datetime
 from itertools import zip_longest
+import webbrowser
 
 import pandas as pd
 import numpy as np
@@ -21,8 +22,10 @@ class SpotifyAPI:
     MAX_SONG_AUDIO_FEATURES = 100
     MAX_TRACKS = 100
 
-    def __init__(self, song_ids: pd.Series):
+    def __init__(self):
         self.header = self.get_headers()
+
+    def get_data(self, song_ids: pd.Series):
         self.df = self.get_track_data(song_ids)
         self.artist_data = self.get_artist_data(self.df["artist_ids"])
         self.df = self.combine_artist_data(self.df, self.artist_data)
@@ -199,4 +202,119 @@ class SpotifyAPI:
             for track in p.json()["audio_features"]:
                 data.append([track[key] for key in feature_keys])
         return pd.DataFrame(data)
+    
+    def get_playlist(self, playlist_id: str) -> list[str]:
+        """
+        Get all of the tracks in the given playlist
+
+        Parameters
+        ----------
+        playlist_id: str
+            string of characters
+
+        Returns
+        -------
+        list[str]
+            Every track_id in the playlist
+        """
+        p = requests.get(
+            f"https://api.spotify.com/v1/playlists/{playlist_id}",
+            headers=self.header
+        )
+        return [
+            song["track"]["id"] for song in p.json()["tracks"]["items"]
+        ]
+    
+    def create_playlist(
+            self,
+            auth: str,
+            name: str,
+            description: str = "new playlist",
+            public: bool = True
+    ) -> str:
+        """
+        Create a playlist with the name `name`
+
+        Paremeters
+        ----------
+        auth: str
+            permission to create the playlist
+        name: str
+            name of the playlist created
+        description: str
+            brief description of the playlist
+        public: bool
+            whether or not the playlist is public
+
+        Returns
+        -------
+        playlist_id: str
+            the playlist ID if creation was successful, otherwise error
+        """
+        url = "https://api.spotify.com/v1/me"
+        headers = {"Authorization": f"Bearer {auth}"}
+        
+        response = requests.get(url, headers=headers)
+        print(response.json())
+        user_id = response.json().get("id")
+        print(f"{user_id=}")
+        p = requests.post(
+            f"https://api.spotify.com/v1/users/{user_id}/playlists",
+            json={"name": name, "description": description, "public": public},
+            headers= {"Authorization": f"Bearer {auth}", "Content-Type": "application/json"}
+        )
+        p.raise_for_status()
+        print(f"Playlist {name} created")
+        return p.json()["id"]
+
+    def get_playlist_auth(self):
+        REDIRECT_URI = "http://localhost:8888/callback"  # Set this in Spotify Developer Dashboard
+        SCOPES = "playlist-modify-public"
+
+        auth_url = f"https://accounts.spotify.com/authorize?client_id={secrets.get('client_id')}&response_type=code&redirect_uri={REDIRECT_URI}&scope={SCOPES}"
+        webbrowser.open(auth_url)  # Opens in the user's browser
+        auth_code = input("Paste the authcode here: ")
+        # Exchange authorization code for access & refresh tokens
+        token_url = "https://accounts.spotify.com/api/token"
+        data = {
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "redirect_uri": REDIRECT_URI,
+            "client_id": secrets.get("client_id"),
+            "client_secret": secrets.get("secret_token", ''),
+        }
+        response = requests.post(token_url, data=data)
+        return response.json()["access_token"]
+    
+    def add_tracks_to_playlist(self, auth: str, playlist_id: str, tracks: list[str]) -> None:
+        """
+        Add the list of tracks to the specified playlist
+
+        a maximum of 100 tracks can be added per post
+
+        Parameters
+        ----------
+        playlist_id: str
+            the spotify playlist id to add to
+        tracks: list[str]
+            list of tracks to add
+        auth: str
+            the token that gives permission to add tracks
+        """
+        max_tracks = 100
+
+        url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
+        print(f"{url=}")
+
+        while tracks:
+            tracks_to_dump, tracks = tracks[:max_tracks], tracks[max_tracks:]
+            p = requests.post(
+                url,
+                json={"uris": tracks_to_dump},
+                headers= {"Authorization": f"Bearer {auth}", "Content-Type": "application/json"}
+            )
+            p.raise_for_status()
+        print("All tracks added")
+        return p
+
 
