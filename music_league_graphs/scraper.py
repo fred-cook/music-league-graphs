@@ -64,7 +64,7 @@ def process_round(soup: BeautifulSoup,
 
     # Find all rows containing voters
     entries = soup.find_all(class_="card mb-4")
-    round_name = soup.title.text.split('| ')[-1]
+    round_number, round_name = get_round_details(soup)
 
     for entry in entries:
         submitter = (
@@ -76,6 +76,8 @@ def process_round(soup: BeautifulSoup,
             continue # don't care about votes received by quitters
         names |= {submitter}
         song_id = entry["id"][len("spotify:track:") :]
+        song_name = entry.find("h6", class_="card-title").text.strip()
+        artist_name = entry.find("p").text.strip()
         total = int(
             entry.findNext(class_="col-auto text-end")
             .findNext("h3")
@@ -86,6 +88,9 @@ def process_round(soup: BeautifulSoup,
         data.append(
             {"submitter": submitter,
                 "song_id": song_id,
+                "song_name": song_name,
+                "artist_name": artist_name,
+                "round_number": round_number,
                 "round": round_name,
             } | votes
         )
@@ -131,3 +136,13 @@ def process_votes(entry: BeautifulSoup, expected_total: int) -> dict[str, int]:
             name: 0 if value > 0 else value for name, value in votes.items()
         }
     return votes
+
+
+def get_round_details(soup: BeautifulSoup) -> tuple[int, str]:
+    """
+    Return the round number and name
+    """
+    round_div = soup.findAll("div", class_="card-body")[5]
+    round_number = int(round_div.find(class_="text-body-tertiary").text.lstrip("ROUND "))
+    round_name = round_div.find("h5", class_="card-title").text
+    return round_number, round_name

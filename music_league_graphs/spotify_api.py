@@ -79,7 +79,6 @@ class SpotifyAPI:
             track_data["artist_ids"] = [artist["id"] for artist in track["artists"]]
             track_data["explicit"] = track["explicit"]
             track_data["popularity"] = track["popularity"]
-            track_data["song_name"] = track["name"]
             data.append(track_data)
         return data
         
