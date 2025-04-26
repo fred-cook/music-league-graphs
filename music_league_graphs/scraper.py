@@ -92,6 +92,7 @@ def process_round(soup: BeautifulSoup,
                 "artist_name": artist_name,
                 "round_number": round_number,
                 "round": round_name,
+                "submitter_comment": get_submitter_comment(entry),
             } | votes
         )
     return data, names
@@ -146,3 +147,11 @@ def get_round_details(soup: BeautifulSoup) -> tuple[int, str]:
     round_number = int(round_div.find(class_="text-body-tertiary").text.lstrip("ROUND "))
     round_name = round_div.find("h5", class_="card-title").text
     return round_number, round_name
+
+
+def get_submitter_comment(entry: BeautifulSoup) -> str:
+    """
+    If the submitter left a comment visible at the time of voting
+    it will be returned, otherwise blank string
+    """
+    return entry.find("span", class_="text-break").text
