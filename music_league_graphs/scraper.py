@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from collections import defaultdict
+from typing import Any
 
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -60,7 +61,11 @@ def process_round(soup: BeautifulSoup,
         the results from this round will be added to it.
     names: set[str]
         all current known names to have submitted a song
+
+    Returns
+    -------
     """
+    data: list[dict[str, Any]]
 
     # Find all rows containing voters
     entries = soup.find_all(class_="card mb-4")
@@ -73,7 +78,7 @@ def process_round(soup: BeautifulSoup,
             .text.strip("\n")
         )
         if submitter == "[Left the league]":
-            continue # don't care about votes received by quitters
+            continue  # don't care about votes received by quitters
         names |= {submitter}
         song_id = entry["id"][len("spotify:track:") :]
         song_name = entry.find("h6", class_="card-title").text.strip()
@@ -84,21 +89,43 @@ def process_round(soup: BeautifulSoup,
             .contents[-1]
             .text.strip()
         )
-        votes = process_votes(entry, expected_total=total)
+        votes, comments = process_votes(entry, expected_total=total)
         data.append(
-            {"submitter": submitter,
+            {
+                "submitter": submitter,
                 "song_id": song_id,
                 "song_name": song_name,
                 "artist_name": artist_name,
                 "round_number": round_number,
                 "round": round_name,
                 "submitter_comment": get_submitter_comment(entry),
-            } | votes
+            }
+            | votes
         )
     return data, names
 
 
 def convert_votes(
+    comments: list[dict[str, tuple[str, str]]],
+) -> dict[str, list[dict[str, str]]]:
+    """
+    Convert the list of comments to a dictionary of comments
+    from each submitter, with the values a list of the comments
+    and who they commented on
+
+    Parameters
+    ----------
+    list : _type_
+        _description_
+
+    Returns
+    -------
+    dict[str, list[dict[str, str]]]
+        _description_
+    """
+    pass
+
+
 def process_votes(entry: BeautifulSoup, expected_total: int) -> dict[str, int]:
     """
     Extract the votes for this round to see who voted for who.
@@ -119,14 +146,17 @@ def process_votes(entry: BeautifulSoup, expected_total: int) -> dict[str, int]:
     -------
     votes: dict[str, int]
         the number of votes each voter gave.
+    comments: dict[str, str]
+        the comments of each voter
     """
 
     votes: dict[str, int] = defaultdict(int)
+    comments: dict[str, str] = {}
     for row in entry.findNext(class_="card-footer").findAll(class_="row"):
         name = row.find_next(class_="text-truncate").text
 
         comment = row.findAll(class_="text-break ws-pre-wrap")
-        comment = comment[0].text if len(comment) else None
+        comments[name] = comment[0].text if len(comment) else ""
 
         score = row.findAll(class_="m-0")
         score = int(score[0].text) if len(score) else 0
@@ -135,10 +165,8 @@ def process_votes(entry: BeautifulSoup, expected_total: int) -> dict[str, int]:
 
     if sum(list(votes.values())) != expected_total:
         # this means submitter didn't vote, and only received downvotes
-        votes = {
-            name: 0 if value > 0 else value for name, value in votes.items()
-        }
-    return votes
+        votes = {name: 0 if value > 0 else value for name, value in votes.items()}
+    return votes, comments
 
 
 def get_round_details(soup: BeautifulSoup) -> tuple[int, str]:
@@ -146,7 +174,9 @@ def get_round_details(soup: BeautifulSoup) -> tuple[int, str]:
     Return the round number and name
     """
     round_div = soup.findAll("div", class_="card-body")[5]
-    round_number = int(round_div.find(class_="text-body-tertiary").text.lstrip("ROUND "))
+    round_number = int(
+        round_div.find(class_="text-body-tertiary").text.lstrip("ROUND ")
+    )
     round_name = round_div.find("h5", class_="card-title").text
     return round_number, round_name
 
@@ -157,3 +187,6 @@ def get_submitter_comment(entry: BeautifulSoup) -> str:
     it will be returned, otherwise blank string
     """
     return entry.find("span", class_="text-break").text
+
+
+soup = create_dataframe(Path("../league_rounds"))
