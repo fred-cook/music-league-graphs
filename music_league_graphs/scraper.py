@@ -43,11 +43,11 @@ def create_dataframe(path: Path) -> tuple[pd.DataFrame, list[str]]:
     return pd.DataFrame(data), list(names)
 
 
-
-def process_round(soup: BeautifulSoup,
-                  data: list[dict],
-                  names: set[str],
-    ) -> tuple[list[dict], list[str]]:
+def process_round(
+    soup: BeautifulSoup,
+    data: list[dict],
+    names: set[str],
+) -> tuple[list[dict], list[str]]:
     """
     Extract the submitters, their song and the votes they received
     for each player in the round.
