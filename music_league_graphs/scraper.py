@@ -7,7 +7,9 @@ from bs4 import BeautifulSoup
 import pandas as pd
 
 
-def create_dataframe(path: Path) -> tuple[pd.DataFrame, list[str]]:
+def create_dataframe(
+        path: Path
+    ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """
     Given a path containing the html elements of the music league
     collect all of the data of who voted for who, as well as the
@@ -21,12 +23,14 @@ def create_dataframe(path: Path) -> tuple[pd.DataFrame, list[str]]:
 
     Returns
     -------
-    tuple[pd.DataFrame, list[str]]
+    tuple[pd.DataFrame, pd.DataFrame, list[str]]
         the dataframe of the scraped league results, with each
-        row representing a players entry in that round. A list
-        of names for everyone that finished the league
+        row representing a players entry in that round. Same
+        for comments. A list of names for everyone that finished
+        the league
     """
     data: list[dict] = []
+    comments: list[dict] = []
     names: set[str] = set()
 
     for file in path.iterdir():
@@ -38,16 +42,17 @@ def create_dataframe(path: Path) -> tuple[pd.DataFrame, list[str]]:
 
         # Load HTML content into BeautifulSoup
         soup = BeautifulSoup(html_content, "html.parser")
-        data, names = process_round(soup, data, names)
+        round_data, round_comments, names = process_round(soup, names)
 
-    return pd.DataFrame(data), list(names)
+        data += round_data
+        comments += round_comments
+    return pd.DataFrame(data), pd.DataFrame(comments).fillna(""), list(names)
 
 
 def process_round(
     soup: BeautifulSoup,
-    data: list[dict],
     names: set[str],
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str]]:
     """
     Extract the submitters, their song and the votes they received
     for each player in the round.
@@ -56,16 +61,17 @@ def process_round(
     ----------
     soup: BeautifulSoup
         the soupified html for the give round
-    data: list[dict]
-        the current list of data extracted from the league.
-        the results from this round will be added to it.
     names: set[str]
         all current known names to have submitted a song
 
     Returns
     -------
-    """
     data: list[dict[str, Any]]
+    comments: list[dict]
+    names: set[str]
+    """
+    data: list[dict[str, Any]] = []
+    comments: list[dict[str, str]] = []
 
     # Find all rows containing voters
     entries = soup.find_all(class_="card mb-4")
@@ -89,41 +95,24 @@ def process_round(
             .contents[-1]
             .text.strip()
         )
-        votes, comments = process_votes(entry, expected_total=total)
-        data.append(
-            {
-                "submitter": submitter,
-                "song_id": song_id,
-                "song_name": song_name,
-                "artist_name": artist_name,
-                "round_number": round_number,
-                "round": round_name,
-                "submitter_comment": get_submitter_comment(entry),
-            }
-            | votes
+        votes, voter_comments = process_votes(entry, expected_total=total)
+        
+        submitter_info = {
+            "submitter": submitter,
+            "song_id": song_id,
+            "song_name": song_name,
+            "artist_name": artist_name,
+            "round_number": round_number,
+            "round": round_name,
+        }
+
+        data.append(submitter_info | votes)
+        comments.append(
+            submitter_info |
+            {"submitter_comment": get_submitter_comment(entry)} |
+            voter_comments
         )
-    return data, names
-
-
-def convert_votes(
-    comments: list[dict[str, tuple[str, str]]],
-) -> dict[str, list[dict[str, str]]]:
-    """
-    Convert the list of comments to a dictionary of comments
-    from each submitter, with the values a list of the comments
-    and who they commented on
-
-    Parameters
-    ----------
-    list : _type_
-        _description_
-
-    Returns
-    -------
-    dict[str, list[dict[str, str]]]
-        _description_
-    """
-    pass
+    return data, comments, names
 
 
 def process_votes(entry: BeautifulSoup, expected_total: int) -> dict[str, int]:
