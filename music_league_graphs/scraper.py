@@ -97,6 +97,8 @@ def process_round(soup: BeautifulSoup,
         )
     return data, names
 
+
+def convert_votes(
 def process_votes(entry: BeautifulSoup, expected_total: int) -> dict[str, int]:
     """
     Extract the votes for this round to see who voted for who.
