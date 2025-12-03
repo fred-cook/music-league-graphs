@@ -37,7 +37,6 @@ class SpotifyAPI:
             "client_id": secrets.get("client_id", ""),
             "client_secret": secrets.get("secret_token", ""),
         }
-        print(data)
         auth_response = requests.post(
             "https://accounts.spotify.com/api/token", data=data
         )
