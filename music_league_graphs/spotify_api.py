@@ -1,4 +1,3 @@
-
 import tomli
 from pathlib import Path
 from typing import Any, Sequence
@@ -14,7 +13,6 @@ import music_league_graphs as mlg
 
 with open(Path(mlg.__file__).parent.parent / "secret.toml", "rb") as f:
     secrets = tomli.load(f)
-
 
 
 class SpotifyAPI:
@@ -36,10 +34,13 @@ class SpotifyAPI:
         """
         data = {
             "grant_type": "client_credentials",
-            "client_id": secrets.get("client_id", ''),
-            "client_secret": secrets.get("secret_token", ''),
+            "client_id": secrets.get("client_id", ""),
+            "client_secret": secrets.get("secret_token", ""),
         }
-        auth_response = requests.post("https://accounts.spotify.com/api/token", data=data)
+        print(data)
+        auth_response = requests.post(
+            "https://accounts.spotify.com/api/token", data=data
+        )
         access_token = auth_response.json().get("access_token")
         return {"Authorization": f"Bearer {access_token}"}
 
@@ -81,7 +82,7 @@ class SpotifyAPI:
             track_data["popularity"] = track["popularity"]
             data.append(track_data)
         return data
-        
+
     def get_album_info(self, album: dict[str, Any]) -> dict[str, Any]:
         """
         Parse the album information extracting only the useful
@@ -89,18 +90,17 @@ class SpotifyAPI:
         """
         release_date = self.parse_release_date(album["release_date"])
         album_name = album["name"]
-        return {
-            "release_date": release_date,
-            "album_name": album_name
-        }
-    
+        return {"release_date": release_date, "album_name": album_name}
+
     @staticmethod
     def parse_release_date(date: str) -> datetime:
         time = ["year", "month", "day"]
         # default unknown days/months to the 1st
         return datetime(
-            **{t: int(val)
-            for t, val in zip_longest(time, date.split("-"), fillvalue=1)}
+            **{
+                t: int(val)
+                for t, val in zip_longest(time, date.split("-"), fillvalue=1)
+            }
         )
 
     def get_artist_data(self, artists: pd.Series) -> dict[str, Any]:
@@ -112,15 +112,13 @@ class SpotifyAPI:
         tail end
         """
         # flatten and remove duplicates
-        artists: list[str] = list(
-            {artist_id for row in artists for artist_id in row}
-        )
+        artists: list[str] = list({artist_id for row in artists for artist_id in row})
         artist_chunks = self.chunk_series(artists, self.MAX_ARTIST_COUNT)
 
         artist_data: dict[str, Any] = {}
-        
+
         for chunk in artist_chunks:
-            url = f'https://api.spotify.com/v1/artists?ids={",".join(chunk)}'
+            url = f"https://api.spotify.com/v1/artists?ids={','.join(chunk)}"
             p = requests.get(url, headers=self.header)
             artist_data |= self.process_artist_json(p.json()["artists"])
 
@@ -132,41 +130,50 @@ class SpotifyAPI:
         so split it into chunks of 50 + whatever is left over
         """
         split_indices = np.arange(
-            chunk_size,
-            chunk_size * int(np.ceil(len(series) / chunk_size)),
-            chunk_size
+            chunk_size, chunk_size * int(np.ceil(len(series) / chunk_size)), chunk_size
         )
-        return np.array_split(
-            series,
-            split_indices
-        )
-        
-    def process_artist_json(self, data: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        return np.array_split(series, split_indices)
+
+    def process_artist_json(
+        self, data: list[dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
         """
         Process the artist data into a dictionary with the artist IDs as
         the keys so it can be inserted back into the big dataframe
         """
         return {
-            artist["id"]: {"genres": artist["genres"],
-                           "followers": artist["followers"]["total"],
-                           "popularity": artist["popularity"]}
+            artist["id"]: {
+                "genres": artist["genres"],
+                "followers": artist["followers"]["total"],
+                "popularity": artist["popularity"],
+            }
             for artist in data
         }
-    
+
     def combine_artist_data(
-            self, df: pd.DataFrame, artist_data: dict[str, Any]
-        ) -> pd.DataFrame:
+        self, df: pd.DataFrame, artist_data: dict[str, Any]
+    ) -> pd.DataFrame:
         """
         Recombine the artist data into the main dataframe by using the
         artist id
         """
         artist_df_data: list[dict[str, Any]] = []
         for artist_ids in df["artist_ids"]:
-            row = {"genres": list({genre for artist_id in artist_ids
-                                 for genre in artist_data[artist_id]["genres"]}),
-                "followers": max([artist_data[artist_id]["followers"] for artist_id in artist_ids]),
-                "popularity": max([artist_data[artist_id]["popularity"] for artist_id in artist_ids]),
-                }
+            row = {
+                "genres": list(
+                    {
+                        genre
+                        for artist_id in artist_ids
+                        for genre in artist_data[artist_id]["genres"]
+                    }
+                ),
+                "followers": max(
+                    [artist_data[artist_id]["followers"] for artist_id in artist_ids]
+                ),
+                "popularity": max(
+                    [artist_data[artist_id]["popularity"] for artist_id in artist_ids]
+                ),
+            }
             artist_df_data.append(row)
         return pd.concat((df, pd.DataFrame(artist_df_data)), axis=1)
 
@@ -180,16 +187,16 @@ class SpotifyAPI:
         chunks = self.chunk_series(track_ids, self.MAX_SONG_AUDIO_FEATURES)
 
         feature_keys = [
-            "acousticness", # A confidence measure from 0.0 to 1.0 of whether the track is acoustic
-            "danceability", # Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity.
-            "energy", # Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity. 
-            "instrumentalness", # Predicts whether a track contains no vocals. "Ooh" and "aah" sounds are treated as instrumental 
-            "key", # The key the track is in. Integers map to pitches using standard Pitch Class notation. E.g. 0 = C, 1 = C♯/D♭, 2 = D, and so on. If no key was detected, the value is -1.'
-            "liveness", # Detects the presence of an audience in the recording
-            "loudness", # The overall loudness of a track in decibels (dB). Loudness values are averaged across the entire track
-            "tempo", # The overall estimated tempo of a track in beats per minute (BPM).
-            "time_signature", # An estimated time signature. The time signature ranges from 3 to 7 indicating time signatures of "3/4", to "7/4".
-            "valence", #A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track
+            "acousticness",  # A confidence measure from 0.0 to 1.0 of whether the track is acoustic
+            "danceability",  # Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity.
+            "energy",  # Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity.
+            "instrumentalness",  # Predicts whether a track contains no vocals. "Ooh" and "aah" sounds are treated as instrumental
+            "key",  # The key the track is in. Integers map to pitches using standard Pitch Class notation. E.g. 0 = C, 1 = C♯/D♭, 2 = D, and so on. If no key was detected, the value is -1.'
+            "liveness",  # Detects the presence of an audience in the recording
+            "loudness",  # The overall loudness of a track in decibels (dB). Loudness values are averaged across the entire track
+            "tempo",  # The overall estimated tempo of a track in beats per minute (BPM).
+            "time_signature",  # An estimated time signature. The time signature ranges from 3 to 7 indicating time signatures of "3/4", to "7/4".
+            "valence",  # A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track
         ]
 
         data: list[dict[str, Any]] = []
@@ -201,7 +208,7 @@ class SpotifyAPI:
             for track in p.json()["audio_features"]:
                 data.append([track[key] for key in feature_keys])
         return pd.DataFrame(data)
-    
+
     def get_playlist(self, playlist_id: str) -> list[str]:
         """
         Get all of the tracks in the given playlist
@@ -217,19 +224,16 @@ class SpotifyAPI:
             Every track_id in the playlist
         """
         p = requests.get(
-            f"https://api.spotify.com/v1/playlists/{playlist_id}",
-            headers=self.header
+            f"https://api.spotify.com/v1/playlists/{playlist_id}", headers=self.header
         )
-        return [
-            song["track"]["id"] for song in p.json()["tracks"]["items"]
-        ]
-    
+        return [song["track"]["id"] for song in p.json()["tracks"]["items"]]
+
     def create_playlist(
-            self,
-            auth: str,
-            name: str,
-            description: str = "new playlist",
-            public: bool = True
+        self,
+        auth: str,
+        name: str,
+        description: str = "new playlist",
+        public: bool = True,
     ) -> str:
         """
         Create a playlist with the name `name`
@@ -252,7 +256,7 @@ class SpotifyAPI:
         """
         url = "https://api.spotify.com/v1/me"
         headers = {"Authorization": f"Bearer {auth}"}
-        
+
         response = requests.get(url, headers=headers)
         print(response.json())
         user_id = response.json().get("id")
@@ -260,14 +264,19 @@ class SpotifyAPI:
         p = requests.post(
             f"https://api.spotify.com/v1/users/{user_id}/playlists",
             json={"name": name, "description": description, "public": public},
-            headers= {"Authorization": f"Bearer {auth}", "Content-Type": "application/json"}
+            headers={
+                "Authorization": f"Bearer {auth}",
+                "Content-Type": "application/json",
+            },
         )
         p.raise_for_status()
         print(f"Playlist {name} created")
         return p.json()["id"]
 
     def get_playlist_auth(self):
-        REDIRECT_URI = "http://localhost:8888/callback"  # Set this in Spotify Developer Dashboard
+        REDIRECT_URI = (
+            "http://localhost:8888/callback"  # Set this in Spotify Developer Dashboard
+        )
         SCOPES = "playlist-modify-public"
 
         auth_url = f"https://accounts.spotify.com/authorize?client_id={secrets.get('client_id')}&response_type=code&redirect_uri={REDIRECT_URI}&scope={SCOPES}"
@@ -280,12 +289,14 @@ class SpotifyAPI:
             "code": auth_code,
             "redirect_uri": REDIRECT_URI,
             "client_id": secrets.get("client_id"),
-            "client_secret": secrets.get("secret_token", ''),
+            "client_secret": secrets.get("secret_token", ""),
         }
         response = requests.post(token_url, data=data)
         return response.json()["access_token"]
-    
-    def add_tracks_to_playlist(self, auth: str, playlist_id: str, tracks: list[str]) -> None:
+
+    def add_tracks_to_playlist(
+        self, auth: str, playlist_id: str, tracks: list[str]
+    ) -> None:
         """
         Add the list of tracks to the specified playlist
 
@@ -310,10 +321,11 @@ class SpotifyAPI:
             p = requests.post(
                 url,
                 json={"uris": tracks_to_dump},
-                headers= {"Authorization": f"Bearer {auth}", "Content-Type": "application/json"}
+                headers={
+                    "Authorization": f"Bearer {auth}",
+                    "Content-Type": "application/json",
+                },
             )
             p.raise_for_status()
         print("All tracks added")
         return p
-
-
