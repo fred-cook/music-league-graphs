@@ -131,7 +131,7 @@ class SpotifyAPI:
         split_indices = np.arange(
             chunk_size, chunk_size * int(np.ceil(len(series) / chunk_size)), chunk_size
         )
-        return np.array_split(series, split_indices)
+        return np.array_split(np.asarray(series), split_indices)
 
     def process_artist_json(
         self, data: list[dict[str, Any]]
@@ -169,7 +169,7 @@ class SpotifyAPI:
                 "followers": max(
                     [artist_data[artist_id]["followers"] for artist_id in artist_ids]
                 ),
-                "popularity": max(
+                "artist_popularity": max(
                     [artist_data[artist_id]["popularity"] for artist_id in artist_ids]
                 ),
             }
